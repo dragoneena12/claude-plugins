@@ -1,0 +1,13 @@
+{
+  "name": "lapi-claude-plugins",
+  "owner": {
+    "name": "Lapi"
+  },
+  "plugins": [
+    {
+      "name": "lapi-claude-plugin",
+      "source": "./plugins/lapi-claude-plugin",
+      "description": "Lapiの個人用Claudeプラグイン"
+    }
+  ]
+}
