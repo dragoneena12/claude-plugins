@@ -128,9 +128,32 @@ if (user === null) return;
 
 ステップ5の後、PRがある場合に限り、ユーザーに投稿の意向を確認する。PRがない場合（base差分レビュー）はステップ5で終了する。
 
-- AskUserQuestionで投稿するかどうかをユーザーに確認する
-- 投稿する場合、採用するコメントの絞り込み（全採用 / 一部選択 / 編集）をユーザーから受け取る
-- `gh pr review --comment` でインラインコメントを送信する。各コメント本文の先頭に `[<viewpoint>]` のプレフィックスを付ける（例: `[機能性] ここでnullチェックが…`）
+- AskUserQuestionで投稿するコメントをチェックボックス形式（multiSelect）で選ばせる。各コメントを1選択肢とし、`[<viewpoint>] <file>:<line> — <messageの冒頭1行>` を選択肢ラベルにする。デフォルトは全選択。チェックが付いたものだけを投稿対象とする
+- 1件も選ばれなかった場合は投稿せずステップを終了する
+- 投稿対象の commit SHA を取得する:
+
+  ```bash
+  gh pr view <番号> --json headRefOid --jq .headRefOid
+  ```
+
+- 各コメントをインライン投稿する。本文の先頭に `[<viewpoint>]` を付ける:
+
+  ```bash
+  gh api repos/{owner}/{repo}/pulls/<番号>/comments \
+    -f body='[<viewpoint>] 本文' \
+    -f commit_id='<SHA>' \
+    -f path='<file>' \
+    -F line=<行番号> \
+    -f side='RIGHT'
+  ```
+
+- 行番号は diff の右側（追加・変更後）かつ diffハンク内の行を指定する
+- diff外のファイル・行を指す指摘は通常コメントで投稿し、本文にファイル:行を明記する:
+
+  ```bash
+  gh pr comment <番号> --body '[<viewpoint>] ファイル:行 — 本文'
+  ```
+
 - 投稿後、PRのURLを報告する
 
 ---
