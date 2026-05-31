@@ -1,4 +1,5 @@
 ---
+name: create-skill
 description: 新しいClaudeスキルを対話的に設計・作成する
 disable-model-invocation: true
 ---
