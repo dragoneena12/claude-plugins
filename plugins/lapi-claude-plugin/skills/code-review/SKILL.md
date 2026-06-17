@@ -126,37 +126,34 @@ if (user === null) return;
 
 ### ステップ6: PR投稿（PRがある場合のみ）
 
-ステップ5の後、PRがある場合に限り、ユーザーに投稿の意向を確認する。PRがない場合（base差分レビュー）はステップ5で終了する。
+ステップ5の後、PRがある場合に限り以下を確認する。PRがない場合（base差分レビュー）はステップ5で終了する。
 
-- ステップ5でコメントに番号（1, 2, 3…）を振る
-- ステップ5の表示後、投稿候補コメントの全文を番号付きで改めてテキスト出力する。形式はステップ5と同じ（`### <番号>. [<viewpoint>] <file>:<line>` + 本文）
-- その後、テキスト入力で「投稿するコメントの番号をカンマ区切りで入力してください（例: 1,2,3 / all / none）」と聞く
-- ユーザーの入力に従い、指定された番号のコメントのみを投稿対象とする。`all` なら全件、`none` または空欄なら投稿せずステップを終了する
-- 投稿対象の commit SHA を取得する:
+まず `gh pr view <番号> --json author --jq .author.login` でPR作者のGitHubログインを取得し、`gh api user --jq .login` で取得した自分のログインと比較する。作者が自分自身の場合はこのステップをスキップして終了する。
+
+ユーザー承認は不要。全コメントをpending review（下書き）としてGitHubに追加する。
+
+- commit SHA を取得する:
 
   ```bash
   gh pr view <番号> --json headRefOid --jq .headRefOid
   ```
 
-- 各コメントをインライン投稿する。本文の先頭に `[<viewpoint>]` を付ける:
+- 全コメントを1つのpending reviewとしてまとめて追加する（`event` を指定しないことでpendingになる）:
 
   ```bash
-  gh api repos/{owner}/{repo}/pulls/<番号>/comments \
-    -f body='[<viewpoint>] 本文' \
+  gh api repos/{owner}/{repo}/pulls/<番号>/reviews \
+    -X POST \
     -f commit_id='<SHA>' \
-    -f path='<file>' \
-    -F line=<行番号> \
-    -f side='RIGHT'
+    -f body='' \
+    -f 'comments[][path]=<file>' \
+    -F 'comments[][line]=<行番号>' \
+    -f 'comments[][body]=[<viewpoint>] 本文' \
+    -f 'comments[][side]=RIGHT'
   ```
 
 - 行番号は diff の右側（追加・変更後）かつ diffハンク内の行を指定する
-- diff外のファイル・行を指す指摘は通常コメントで投稿し、本文にファイル:行を明記する:
-
-  ```bash
-  gh pr comment <番号> --body '[<viewpoint>] ファイル:行 — 本文'
-  ```
-
-- 投稿後、PRのURLを報告する
+- diff外のファイル・行を指す指摘は `comments` から除外し、review の `body` にまとめて記載する
+- 追加完了後、pending reviewとして保存された旨とPRのURLを報告する
 
 ---
 
