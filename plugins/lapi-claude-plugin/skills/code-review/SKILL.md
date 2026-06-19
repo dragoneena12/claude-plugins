@@ -138,7 +138,7 @@ if (user === null) return;
   gh pr view <番号> --json headRefOid --jq .headRefOid
   ```
 
-- 全コメントを1つのpending reviewとしてまとめて追加する（`event` を指定しないことでpendingになる）:
+- 全コメントを1つのpending review（下書き）としてまとめて追加する。**`event` フィールドは絶対に指定しないこと**（指定するとCOMMENT/APPROVE/REQUEST_CHANGESとして即公開されてしまう。指定なしにすることでpending下書きになる）:
 
   ```bash
   gh api repos/{owner}/{repo}/pulls/<番号>/reviews \

@@ -97,7 +97,7 @@ PR情報は `gh pr view <番号> --repo <owner>/<repo> --json number,title` で�
    gh pr checkout <番号> --repo <owner>/<repo> -d --worktree /tmp/pr-review-<番号>
    ```
 
-2. worktreeディレクトリをカレントディレクトリとして `code-review` スキルを実行する。pendingレビューの投稿（`gh api` での submit）まで含めてユーザー承認なしで完了させる。
+2. worktreeディレクトリをカレントディレクトリとして `code-review` スキルを実行する。ユーザー承認なしで完了させる。**レビューはpending（下書き）のままにすること。公開submitは絶対に行わない。**
 
 3. code-review完了後にworktreeを削除する:
 
