@@ -94,8 +94,15 @@ PR情報は `gh pr view <番号> --repo <owner>/<repo> --json number,title` で�
 1. PRをworktreeとしてチェックアウトする:
 
    ```bash
-   gh pr checkout <番号> --repo <owner>/<repo> -d --worktree /tmp/pr-review-<番号>
+   # ブランチ名を取得
+   BRANCH=$(gh pr view <番号> --repo <owner>/<repo> --json headRefName --jq .headRefName)
+   # リモートからフェッチ
+   git fetch origin "$BRANCH"
+   # worktreeを作成
+   git worktree add /tmp/pr-review-<番号> "origin/$BRANCH"
    ```
+
+   worktreeパスが既に存在する場合は先に `git worktree remove /tmp/pr-review-<番号> --force` で削除してから再作成する。
 
 2. worktreeディレクトリをカレントディレクトリとして `code-review` スキルを実行する。ユーザー承認なしで完了させる。**レビューはpending（下書き）のままにすること。公開submitは絶対に行わない。**
 
@@ -132,5 +139,4 @@ PR情報は `gh pr view <番号> --repo <owner>/<repo> --json number,title` で�
 
 - Slack MCP の読み取りはメッセージ本文の `text` フィールドにメンションとPR URLが含まれるかで判定する
 - `gh` コマンドのオーナー・リポジトリ名は取得したPR URLから抽出する
-- worktreeパスが既に存在する場合は `git worktree remove` で削除してから再作成する
 - code-reviewスキルはworktreeのディレクトリをカレントディレクトリとして実行する

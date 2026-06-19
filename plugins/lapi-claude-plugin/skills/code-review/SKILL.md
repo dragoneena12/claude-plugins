@@ -1,7 +1,6 @@
 ---
 name: code-review
 description: 観点ごとのレビューエージェントを並列起動し、横断検証を経てPRまたはbase差分をレビューする
-disable-model-invocation: true
 ---
 
 ## 実行フロー
