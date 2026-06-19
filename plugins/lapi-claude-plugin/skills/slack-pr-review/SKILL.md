@@ -97,17 +97,34 @@ PR情報は `gh pr view <番号> --repo <owner>/<repo> --json number,title` で�
    gh pr checkout <番号> --repo <owner>/<repo> -d --worktree /tmp/pr-review-<番号>
    ```
 
-2. worktreeディレクトリをカレントディレクトリとして `code-review` スキルを実行し、コメント案を生成する。この時点でユーザー承認は不要。
+2. worktreeディレクトリをカレントディレクトリとして `code-review` スキルを実行する。pendingレビューの投稿（`gh api` での submit）まで含めてユーザー承認なしで完了させる。
 
-3. code-reviewスキルのステップ6（PR投稿の意向確認）でユーザー承認を得て、投稿まで完了させる。
-
-4. 投稿完了後にworktreeを削除する:
+3. code-review完了後にworktreeを削除する:
 
    ```bash
    git worktree remove /tmp/pr-review-<番号> --force
    ```
 
-全PRの処理完了後に次へ進む。
+全PRの処理完了後にステップ6へ進む。
+
+---
+
+### ステップ6: 処理結果のサマリ表示
+
+全PRの処理が完了したら、以下の形式でサマリを表示する:
+
+```
+レビュー完了サマリ
+
+✅ [#<PR番号> <タイトル>](<PR URL>) — pending <N>件投稿
+✅ [#<PR番号> <タイトル>](<PR URL>) — コメントなし（問題なし）
+❌ [#<PR番号> <タイトル>](<PR URL>) — エラー: <エラー内容>
+
+合計: <件数>件処理（うちコメントあり <N>件、なし <M>件、エラー <K>件）
+```
+
+- 各PRについて「pendingコメント件数」「コメントなし」「エラー」のいずれかを記録しておき、ここで一覧表示する
+- エラーが発生したPRがある場合は、ユーザーに確認を促す
 
 ---
 
