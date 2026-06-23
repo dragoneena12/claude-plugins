@@ -14,7 +14,7 @@ description: 自分宛のPRレビュー依頼とSlackメンションを横断収
 ### ステップ1: 自分の特定
 
 - GitHubユーザー名: `gh api user --jq .login`
-- Slackユーザー: `git config user.email` / `git config user.name` を `mcp__plugin_slack_slack__slack_search_users` で照合してuser_idを特定する。特定できなければAskUserQuestionでSlackユーザー名を聞く。
+- Slackユーザー: `git config user.email` / `git config user.name` を `mcp__plugin_slack_slack__slack_search_users` で照合してuser_idを特定する。特定できなければSlackメンションの収集をスキップする。
 
 ---
 
@@ -86,11 +86,9 @@ mcp__plugin_slack_slack__slack_search_public_and_private
 
 ---
 
-### ステップ5: 統合リストの提示と取捨選択
+### ステップ5: 登録対象の確定
 
-収集結果（PRレビュー依頼・Slackメンション）を収集元ごとにグルーピングして一覧表示する。各行に識別子・タイトル・リンクを含める。PR・Slackとも0件なら「登録対象なし」と報告して終了する。
-
-一覧提示後、AskUserQuestionで登録から除外したいものを確認する。除外指定がなければ全件を登録対象とする。
+収集結果（PRレビュー依頼・Slackメンション）の全件を登録対象とする。PR・Slackとも0件なら「登録対象なし」と報告して終了する。
 
 ---
 
@@ -119,7 +117,7 @@ end tell
 
 ### ステップ7: 結果サマリ
 
-新規登録件数（収集元別内訳）・重複スキップ件数・ユーザー除外件数を報告する。
+新規登録件数（収集元別内訳）・重複スキップ件数を報告する。
 
 ```
 TODO登録完了（リスト: <リスト名>）
@@ -127,7 +125,6 @@ TODO登録完了（リスト: <リスト名>）
 新規登録 <N>件
   ・<タイトル> [<識別子>]
 重複スキップ <M>件
-除外 <K>件
 ```
 
 ---
