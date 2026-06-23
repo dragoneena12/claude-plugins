@@ -36,11 +36,11 @@ gh search prs --review-requested=@me --state=open --json number,title,url,reposi
    gh api repos/<owner>/<repo>/pulls/<番号>/commits --jq 'last | .commit.committer.date'
    ```
 
-2. **他者がまだレビューしていない**: 自分以外のユーザーによる `APPROVED` / `CHANGES_REQUESTED` レビューが存在しない（`COMMENTED` のみは未レビュー扱い）。
+2. **他者がレビューに入っていない**: 自分以外のユーザーによるレビュー（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED` のいずれか）が1件も存在しない。他者がレビューに入っているPRは、以降に新しいコミット等の反応があっても収集しない（1の再レビュー待ち判定より優先する）。
 
    ```bash
    gh api repos/<owner>/<repo>/pulls/<番号>/reviews \
-     --jq '[.[] | select(.user.login != "<github_username>") | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length'
+     --jq '[.[] | select(.user.login != "<github_username>")] | length'
    # 0 のものを対象にする
    ```
 
