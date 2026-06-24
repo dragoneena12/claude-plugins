@@ -20,11 +20,21 @@ description: 自分宛のPRレビュー依頼とSlackメンションを横断収
 
 ### ステップ2: PRレビュー依頼の収集
 
+`review-requested:@me`（未対応のレビュー依頼）と `reviewed-by:@me`（自分がレビュー済みのopen PR）の両方を収集する。前者だけでは、一度自分がレビューを出すと（明示的に再リクエストされない限り）候補から外れ、再レビュー待ち（自分のレビュー後に新コミットが来たPR）を取りこぼす。GitHubのsearch構文はORできないため、GraphQLの2エイリアスを1リクエストで投げてPR番号で重複排除する。
+
 ```bash
-gh search prs --review-requested=@me --state=open --json number,title,url,repository
+gh api graphql -f query='
+query {
+  requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 100) {
+    nodes { ... on PullRequest { number title url repository { nameWithOwner } } }
+  }
+  reviewed: search(query: "is:pr is:open reviewed-by:@me", type: ISSUE, first: 100) {
+    nodes { ... on PullRequest { number title url repository { nameWithOwner } } }
+  }
+}' --jq '[.data.requested.nodes[], .data.reviewed.nodes[]] | unique_by(.repository.nameWithOwner + "#" + (.number|tostring))'
 ```
 
-このうち、次を**すべて満たすPRだけ**を収集対象とする。識別子は `PR <owner>/<repo>#<番号>`。
+得られた候補のうち、次を**すべて満たすPRだけ**を収集対象とする。識別子は `PR <owner>/<repo>#<番号>`。
 
 1. **自分のレビューが必要な状態**: 自分のレビューが未提出（未レビュー）、または自分の最終レビュー後に新しいコミットがある（再レビュー待ち）。
 
