@@ -45,7 +45,14 @@ gh search prs --review-requested=@me --state=open --json number,title,url,reposi
    # 0 のものを対象にする
    ```
 
-3. **レビュー可能な実装PR**: draft ではなく（`gh pr view <番号> --repo <repo> --json isDraft` が `false`）、タイトルが `chore(deps)` / `chore(deps-dev)`（依存更新bot）以外。
+3. **レビュー可能な実装PR**: draft ではなく（`gh pr view <番号> --repo <repo> --json isDraft` が `false`）、**作者がbotでない**こと。
+
+   除外はタイトルではなく**作者**で判定する。作者が bot（`author.is_bot == true`、または `dependabot[bot]` / `renovate[bot]` 等）の自動PRだけを除外する。
+
+   ```bash
+   gh pr view <番号> --repo <owner>/<repo> --json author --jq '.author.is_bot'
+   # false（人間）のものを対象にする
+   ```
 
 ---
 
@@ -72,15 +79,28 @@ gh search prs --review-requested=@me --state=open --json number,title,url,reposi
 
 ### ステップ4: Slackメンションの収集
 
-全チャンネルを横断して自分宛メンションを集める。
+DM・チャンネル（public/private）を横断して自分宛メンションを集める。`to:me` だけではチャンネルでの `@自分` メンションを取りこぼすことがあるため、**次の2系統の検索を必ず両方実行する**。
 
-```
-mcp__plugin_slack_slack__slack_search_public_and_private
-  query: "to:me after:<YYYY-MM-DD>"   # 直近2週間程度
-  sort: "timestamp"
-```
+1. **DM・宛先メンション**（`to:me`）
 
-このうち、**自分のアクション（返信・対応）が必要なメッセージだけ**を残す。依頼・質問・要対応を含むものが対象。本文の趣旨で判断し、自分が既に返信済み／リアクション済みのものは `slack_read_thread` で確認して対象から外す。
+   ```
+   mcp__plugin_slack_slack__slack_search_public_and_private
+     query: "to:me after:<YYYY-MM-DD>"   # 直近2週間程度
+     sort: "timestamp"
+   ```
+
+2. **チャンネルでの直接メンション**（`<@自分のuser_id>`）
+
+   ```
+   mcp__plugin_slack_slack__slack_search_public_and_private
+     query: "<@<自分のuser_id>> after:<YYYY-MM-DD>"
+     sort: "timestamp"
+     channel_types: "public_channel,private_channel"
+   ```
+
+   この検索は自分が参加しただけのスレッドや関連チャンネルも広く拾い、結果が大きくなりやすい。出力がトークン上限を超えてファイルに保存された場合は、サブエージェント（`general-purpose`）に「ファイルを80,000文字ずつpython（`open(...).read()[A:B]`）でスライスして全件読み、各結果のChannel/From/Time/Message_ts/Permalink/本文要約を抽出し、**本文中に `<@自分のuser_id>` を含み自分宛で自分のアクションが必要なものだけ** をフィルタして返す」よう依頼し、全文を自分のコンテキストに載せずに解析する。自分自身が送信したメッセージ（From が自分）は除外する。
+
+両系統の結果を統合し（識別子で重複排除）、**自分のアクション（返信・対応）が必要なメッセージだけ**を残す。依頼・質問・要対応を含むものが対象。本文の趣旨で判断し、自分が既に返信済み／リアクション済みのものは `slack_read_thread` で確認して対象から外す。分報・FYI・自動通知など返信不要なものも除外する。
 
 - 識別子: `Slack <channel>/<message_ts>`
 - リンク: メッセージのpermalink。本文要約を30字程度でタイトルにする。
