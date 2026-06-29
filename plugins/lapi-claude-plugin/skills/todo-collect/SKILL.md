@@ -68,9 +68,9 @@ query {
 
 ### ステップ3: PRの優先度付け（Jira連携）
 
-収集したPRを次の優先度で並べる。
+収集したPRを次の3段階の優先度に分類して並べる。
 
-1. **現スプリントのチケットに紐づくPRを高優先度にする。** PRタイトル先頭のチケットキー（例: `WF-1198`）を抽出し、Atlassian MCPで現スプリント（openSprints）に含まれるか判定する。
+1. **現スプリントのチケットに紐づくPRを高優先度（中→高に格上げ）にする。** PRタイトル先頭のチケットキー（例: `WF-1198`）を抽出し、Atlassian MCPで現スプリント（openSprints）に含まれるか、また課題タイプ・優先度を判定する。
 
    ```
    mcp__atlassian__getAccessibleAtlassianResources   # cloudIdを取得
@@ -78,12 +78,24 @@ query {
      cloudId: <上記cloudId>
      jql: "key in (<抽出したチケットキーをカンマ区切り>) AND sprint in openSprints()"
      fields: ["summary", "status"]
+   # 各チケットの課題タイプ・優先度も取得する（急ぎ判定に使う）
+   mcp__atlassian__searchJiraIssuesUsingJql
+     cloudId: <上記cloudId>
+     jql: "key in (<抽出したチケットキーをカンマ区切り>)"
+     fields: ["summary", "status", "issuetype", "priority"]
    ```
-   返ってきたチケットに紐づくPRを「スプリント内」とする。
+   現スプリントに含まれるチケットに紐づくPRを「スプリント内（高）」とする。
 
-2. **同順位内は古いPRを優先する。** 各グループ内をPR番号の昇順（番号が小さい＝作成が古い）で並べる。
+2. **スプリント外でも急ぎ対応すべきPRは優先度中にする。** スプリント内ではないが、次のいずれかに該当するものは「急ぎ（中）」とする。
+   - 紐づくJiraチケットの課題タイプが `Bug`（バグ）。
+   - 紐づくJiraチケットの優先度が `High` / `Highest`（緊急・重大）。
+   - PRタイトル・本文にバグ修正や緊急対応を示す語（`fix` / `bug` / `hotfix` / `緊急` / `障害` / `バグ` など）を含む。
 
-並び順は「スプリント内（古い順）→ それ以外（古い順）」。
+   いずれにも該当しないスプリント外PRは「通常（低）」とする。
+
+3. **同順位内は古いPRを優先する。** 各グループ内をPR番号の昇順（番号が小さい＝作成が古い）で並べる。
+
+並び順は「スプリント内・高（古い順）→ 急ぎ・中（古い順）→ 通常・低（古い順）」。
 
 ---
 
@@ -125,7 +137,7 @@ DM・チャンネル（public/private）を横断して自分宛メンション�
 
 ### ステップ6: リマインダーへの登録
 
-macOSの `osascript`（AppleScript）でApple純正リマインダーを操作する。ステップ3の優先度順（スプリント内→それ以外、各グループ古い順）に先頭から登録し、登録順がそのまま表示順になるようにする。スプリント内のPRは `priority:1`（高）、それ以外は `priority:9`（低）を設定する。
+macOSの `osascript`（AppleScript）でApple純正リマインダーを操作する。ステップ3の優先度順（スプリント内→急ぎ→通常、各グループ古い順）に先頭から登録し、登録順がそのまま表示順になるようにする。優先度はステップ3の分類に従い、スプリント内のPRは `priority:1`（高）、スプリント外でも急ぎのPRは `priority:5`（中）、それ以外は `priority:9`（低）を設定する。
 
 ```applescript
 tell application "Reminders"
@@ -133,7 +145,7 @@ tell application "Reminders"
   set existingNames to name of reminders of list "<リスト名>"
   -- 優先度順に並べたエントリを先頭から登録する。各エントリについて:
   --   theName = "<タイトル> [<識別子>]"（識別子は末尾に置き視認性を確保）、theBody = "<リンクURL>"
-  --   thePriority = スプリント内なら1、それ以外は9
+  --   thePriority = スプリント内なら1、スプリント外でも急ぎなら5、それ以外は9
   --   existingNames のいずれかが "[<識別子>]" を含むならスキップ、なければ作成
   make new reminder at end of list "<リスト名>" with properties {name:theName, body:theBody, priority:thePriority}
 end tell
