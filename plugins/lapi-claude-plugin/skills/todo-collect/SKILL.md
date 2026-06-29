@@ -46,13 +46,16 @@ query {
    gh api repos/<owner>/<repo>/pulls/<番号>/commits --jq 'last | .commit.committer.date'
    ```
 
-2. **他者がレビューに入っていない**: 自分・PR作成者本人・bot を除いたユーザーによるレビュー（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED` のいずれか）が1件も存在しない。他者がレビューに入っているPRは、以降に新しいコミット等の反応があっても収集しない（1の再レビュー待ち判定より優先する）。
+2. **（未レビューのPRのみ）他者がレビューに入っていない**: 自分が**まだ一度もレビューしていない**PR（`myLastReview == none`）については、自分・PR作成者本人・bot を除いたユーザーによるレビュー（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED` のいずれか）が1件も存在しないことを条件とする。他のレビュアーが既に着手しているPRに、自分が未着手のまま割り込むのを避けるための条件。
+
+   一方、**自分が一度レビュー済みのPR（＝条件1の「再レビュー待ち」: 自分の最終レビュー後に新コミットがある）は、他者がレビューに入っていても収集対象とする**。一度自分が関与した以上は継続フォローするため、この場合は他者レビューの有無を問わない。
 
    ```bash
    AUTHOR=$(gh pr view <番号> --repo <owner>/<repo> --json author --jq .author.login)
    gh api repos/<owner>/<repo>/pulls/<番号>/reviews \
      --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.login != \"$AUTHOR\") | select(.user.type != \"Bot\")] | length"
-   # 0 のものを対象にする
+   # 未レビュー（myLastReview == none）のPRは、この件数が 0 のものだけを対象にする。
+   # 再レビュー待ち（自分のレビュー後に新コミットあり）のPRは、この件数を問わず対象にする。
    ```
 
 3. **レビュー可能な実装PR**: draft ではなく（`gh pr view <番号> --repo <repo> --json isDraft` が `false`）、**作者がbotでない**こと。
@@ -162,7 +165,7 @@ end tell
 
 リストの未完了リマインダーのうち、PR識別子（`[PR <owner>/<repo>#<番号>]`）を持つものを点検し、解決済みのPRを完了状態にする。
 
-各PRリマインダーについて識別子から `<owner>/<repo>` と番号を取り出し、現在もステップ2の収集条件を満たすかを判定する。満たさなくなったもの（マージ／クローズ済み、自分がレビュー済みで再レビュー不要、他者がレビューに入った、draft化、など）を完了にする。
+各PRリマインダーについて識別子から `<owner>/<repo>` と番号を取り出し、現在もステップ2の収集条件を満たすかを判定する。満たさなくなったもの（マージ／クローズ済み、自分がレビュー済みで再レビュー不要、未レビューのまま他者がレビューに入った、draft化、など）を完了にする。なお、自分がレビュー済みで再レビュー待ち（自分のレビュー後に新コミットあり）のものは、他者がレビューに入っていても収集対象として残るため完了化しない。
 
 ```applescript
 tell application "Reminders"
