@@ -48,15 +48,23 @@ query {
    gh api repos/<owner>/<repo>/pulls/<番号>/commits --jq 'last | .commit.committer.date'
    ```
 
-2. **（未レビューのPRのみ）他者がレビューに入っていない**: 自分が**まだ一度もレビューしていない**PR（`myLastReview == none`）については、自分・PR作成者本人・bot を除いたユーザーによるレビュー（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED` のいずれか）が1件も存在しないことを条件とする。他のレビュアーが既に着手しているPRに、自分が未着手のまま割り込むのを避けるための条件。
+2. **（未レビューのPRのみ）他者がレビューに入っていない**: 自分が**まだ一度もレビューしていない**PR（`myLastReview == none`）については、自分・PR作成者本人・bot を除いたユーザーによる**レビュー行為**が1件も存在しないことを条件とする。他のレビュアーが既に着手しているPRに、自分が未着手のまま割り込むのを避けるための条件。
+
+   レビュー行為には次の2種類がある。**両方を必ずチェックする**（片方だけでは見落とす）。
+   - 正式な Pull Request Review（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED`）
+   - PRのissueコメントとして投稿されたレビュー。正式なレビューAPIを介さず、通常のコメントとして実質的なレビュー内容（指摘・修正依頼・承認コメント等）を投稿するレビュアーがいる（例: 「レビューコメント（AI レビューループ）」のような社内の自動レビューフローを経由した人間レビュアーからのコメント）。正式レビューの有無だけで判定すると、こうした実質的な人間レビューを見落とす。
 
    一方、**自分が一度レビュー済みのPR（＝条件1の「再レビュー待ち」: 自分の最終レビュー後に新コミットがある）は、他者がレビューに入っていても収集対象とする**。一度自分が関与した以上は継続フォローするため、この場合は他者レビューの有無を問わない。
 
    ```bash
    AUTHOR=$(gh pr view <番号> --repo <owner>/<repo> --json author --jq .author.login)
+   # 正式な Pull Request Review
    gh api repos/<owner>/<repo>/pulls/<番号>/reviews \
      --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.login != \"$AUTHOR\") | select(.user.type != \"Bot\")] | length"
-   # 未レビュー（myLastReview == none）のPRは、この件数が 0 のものだけを対象にする。
+   # issueコメントとして投稿された実質レビュー（自動レビューループ経由など、正式レビューAPIを介さない場合がある）
+   gh api repos/<owner>/<repo>/issues/<番号>/comments \
+     --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.login != \"$AUTHOR\") | select(.user.type != \"Bot\")] | length"
+   # 未レビュー（myLastReview == none）のPRは、この2つの合計が 0 のものだけを対象にする。
    # 再レビュー待ち（自分のレビュー後に新コミットあり）のPRは、この件数を問わず対象にする。
    ```
 
