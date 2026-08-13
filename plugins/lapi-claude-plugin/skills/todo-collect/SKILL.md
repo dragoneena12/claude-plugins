@@ -20,7 +20,9 @@ description: 自分宛のPRレビュー依頼とSlackメンションを横断収
 
 ---
 
-### ステップ2: PRレビュー依頼の収集
+### ステップ2: PRレビュー依頼と自分のPRへの未対応コメントの収集
+
+#### 2a. 他者PRへのレビュー依頼
 
 `review-requested:@me`（未対応のレビュー依頼）と `reviewed-by:@me`（自分がレビュー済みのopen PR）の両方を収集する。前者だけでは、一度自分がレビューを出すと（明示的に再リクエストされない限り）候補から外れ、再レビュー待ち（自分のレビュー後に新コミットが来たPR）を取りこぼす。GitHubのsearch構文はORできないため、GraphQLの2エイリアスを1リクエストで投げてPR番号で重複排除する。
 
@@ -48,17 +50,27 @@ query {
    gh api repos/<owner>/<repo>/pulls/<番号>/commits --jq 'last | .commit.committer.date'
    ```
 
-2. **（未レビューのPRのみ）他者がレビューに入っていない**: 自分が**まだ一度もレビューしていない**PR（`myLastReview == none`）については、自分・PR作成者本人・bot を除いたユーザーによるレビュー（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED` のいずれか）が1件も存在しないことを条件とする。他のレビュアーが既に着手しているPRに、自分が未着手のまま割り込むのを避けるための条件。
+2. **（未レビューのPRのみ）他者がレビューに入っていない**: 自分が**まだ一度もレビューしていない**PR（`myLastReview == none`）については、自分・PR作成者本人・bot を除いたユーザーによる**レビュー行為**が1件も存在しないことを条件とする。他のレビュアーが既に着手しているPRに、自分が未着手のまま割り込むのを避けるための条件。
+
+   レビュー行為には次の2種類がある。**両方を必ずチェックする**（片方だけでは見落とす）。
+   - 正式な Pull Request Review（`APPROVED` / `CHANGES_REQUESTED` / `COMMENTED`）
+   - PRのissueコメントとして投稿されたレビュー。正式なレビューAPIを介さず、通常のコメントとして実質的なレビュー内容（指摘・修正依頼・承認コメント等）を投稿するレビュアーがいる（例: 「レビューコメント（AI レビューループ）」のような社内の自動レビューフローを経由した人間レビュアーからのコメント）。正式レビューの有無だけで判定すると、こうした実質的な人間レビューを見落とす。
 
    一方、**自分が一度レビュー済みのPR（＝条件1の「再レビュー待ち」: 自分の最終レビュー後に新コミットがある）は、他者がレビューに入っていても収集対象とする**。一度自分が関与した以上は継続フォローするため、この場合は他者レビューの有無を問わない。
 
    ```bash
    AUTHOR=$(gh pr view <番号> --repo <owner>/<repo> --json author --jq .author.login)
+   # 正式な Pull Request Review
    gh api repos/<owner>/<repo>/pulls/<番号>/reviews \
      --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.login != \"$AUTHOR\") | select(.user.type != \"Bot\")] | length"
-   # 未レビュー（myLastReview == none）のPRは、この件数が 0 のものだけを対象にする。
+   # issueコメントとして投稿された実質レビュー（自動レビューループ経由など、正式レビューAPIを介さない場合がある）
+   gh api repos/<owner>/<repo>/issues/<番号>/comments \
+     --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.login != \"$AUTHOR\") | select(.user.type != \"Bot\")] | length"
+   # 未レビュー（myLastReview == none）のPRは、この2つの合計が 0 のものだけを対象にする。
    # 再レビュー待ち（自分のレビュー後に新コミットあり）のPRは、この件数を問わず対象にする。
    ```
+
+   **GraphQLで一括取得する場合の注意**: `reviews`/`comments` の `author` は `login` に加えて必ず `__typename` も取得し、`__typename == "Bot"` でbot判定すること。GitHub GraphQL APIはbotアカウントのログイン名に `[bot]` サフィックスを付けない（例: REST APIでは `tokium-claude-assistant[bot]`／`type: "Bot"` だが、GraphQLでは同じアカウントが `tokium-claude-assistant`（サフィックスなし）として返る）。ログイン名の文字列パターン（`endswith("bot")` や `"[bot]" in login` 等）でbot判定すると、AIレビューbotの自動コメントを人間の他者レビューと誤検出し、収集対象から不当に除外してしまう。
 
 3. **レビュー可能な実装PR**: draft ではなく（`gh pr view <番号> --repo <repo> --json isDraft` が `false`）、**作者がbotでない**こと。
 
@@ -69,11 +81,45 @@ query {
    # false（人間）のものを対象にする
    ```
 
+#### 2b. 自分が作者のPRへの未対応コメント
+
+2aの検索（`review-requested:@me` / `reviewed-by:@me`）は**自分がレビュアーとして関わるPR**しか拾わない。自分が**作成者**のPRに他者からレビューコメントが来た場合、自分はレビュアーではないためこの検索に一切ヒットせず、Slackで直接メンションされない限り完全に見落とされる。これを防ぐため、自分が作者のopen PRも別途走査する。
+
+```bash
+gh api graphql -f query='
+query {
+  search(query: "is:pr is:open author:@me", type: ISSUE, first: 100) {
+    nodes { ... on PullRequest { number title url repository { nameWithOwner } } }
+  }
+}' --jq '.data.search.nodes'
+```
+
+得られた候補のうち、次を**すべて満たすPRだけ**を収集対象とする。識別子は2aと同じ `PR <owner>/<repo>#<番号>`（自分が作者のPRは2aのレビュー依頼検索には出てこないため、識別子が衝突することはない）。
+
+1. draft ではないこと。
+2. **自分の最終アクティビティ以降に、他者からの未対応フィードバックがある**こと。
+
+   ```bash
+   # 自分の最終アクティビティ（最新コミット、または自分の最終issueコメントのうち遅い方）
+   gh api repos/<owner>/<repo>/pulls/<番号>/commits --jq 'last | .commit.committer.date'
+   gh api repos/<owner>/<repo>/issues/<番号>/comments \
+     --jq '[.[] | select(.user.login == "<github_username>")] | sort_by(.created_at) | last | .created_at // "none"'
+
+   # 上記の遅い方より後に、bot以外の他者によるissueコメントがあるか
+   gh api repos/<owner>/<repo>/issues/<番号>/comments \
+     --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.type != \"Bot\") | select(.created_at > \"<自分の最終アクティビティ>\")]"
+   # 同様に、APPROVED以外（COMMENTED / CHANGES_REQUESTED）のレビューがあるか
+   gh api repos/<owner>/<repo>/pulls/<番号>/reviews \
+     --jq "[.[] | select(.user.login != \"<github_username>\") | select(.user.type != \"Bot\") | select(.state != \"APPROVED\") | select(.submitted_at > \"<自分の最終アクティビティ>\")]"
+   ```
+
+   いずれかが1件でもあれば対象とする。`APPROVED` のみ（追加コメントなし）は応答不要のため対象外。自分が最後にコメント/コミットして以降に新規フィードバックが無いPR（例: 承認待ちのまま静止しているPR）も対象外。
+
 ---
 
 ### ステップ3: PRの優先度付け（Jira連携）
 
-収集したPRを次の3段階の優先度に分類して並べる。
+収集したPR（2a・2bいずれの収集元も区別なく）を次の3段階の優先度に分類して並べる。
 
 1. **現スプリントのチケットに紐づくPRを高優先度（中→高に格上げ）にする。** PRタイトル先頭のチケットキー（例: `WF-1198`）を抽出し、Atlassian MCPで現スプリント（openSprints）に含まれるか、また課題タイプ・優先度を判定する。
 
@@ -169,7 +215,10 @@ end tell
 
 リストの未完了リマインダーのうち、PR識別子（`[PR <owner>/<repo>#<番号>]`）を持つものを点検し、解決済みのPRを完了状態にする。
 
-各PRリマインダーについて識別子から `<owner>/<repo>` と番号を取り出し、**その時点のGitHub上の最新状態を都度取得して**、現在もステップ2の収集条件を満たすかを判定する（前回の実行時に満たしていたかどうかは判断材料にしない）。満たさなくなったもの（マージ／クローズ済み、自分がレビュー済みで再レビュー不要、未レビューのまま他者がレビューに入った、draft化、など）を完了にする。なお、自分がレビュー済みで再レビュー待ち（自分のレビュー後に新コミットあり）のものは、他者がレビューに入っていても収集対象として残るため完了化しない。
+各PRリマインダーについて識別子から `<owner>/<repo>` と番号を取り出し、**その時点のGitHub上の最新状態を都度取得して**、現在もステップ2（2aまたは2b）の収集条件を満たすかを判定する（前回の実行時に満たしていたかどうかは判断材料にしない）。まず `gh pr view` で author を確認し、自分自身が作者なら2bの条件、それ以外なら2aの条件で再判定する。
+
+- **2a（他者PRへのレビュー依頼）由来**: 満たさなくなったもの（マージ／クローズ済み、自分がレビュー済みで再レビュー不要、未レビューのまま他者がレビューに入った、draft化、など）を完了にする。なお、自分がレビュー済みで再レビュー待ち（自分のレビュー後に新コミットあり）のものは、他者がレビューに入っていても収集対象として残るため完了化しない。
+- **2b（自分のPRへの未対応コメント）由来**: マージ／クローズ済み、または自分の最終アクティビティ（最新コミット／自分の最終issueコメント）以降に他者からの新規フィードバック（bot以外のissueコメント、もしくはAPPROVED以外のレビュー）が無くなっていれば（＝自分が返信済み、または相手がAPPROVEDのみだった場合）完了にする。
 
 ```applescript
 tell application "Reminders"
